@@ -51,13 +51,14 @@
     if (body) body.classList.add('locked');
 
     /* ========================================================
-       🔊 АУДИО
+       🔊 АУДИО — ИСПРАВЛЕНО ДЛЯ МОБИЛЬНЫХ
        ======================================================== */
     let audioCtx = null;
     let sourceNode = null;
     let gainNode = null;
     let audioUnlocked = false;
 
+    // Расчёт громкости: 60% → 100%
     function computeVolume() {
         const minV = 0.6;
         const maxV = 1.0;
@@ -65,6 +66,7 @@
         return minV + (maxV - minV) * t;
     }
 
+    // Инициализация Web Audio API (без await!)
     function initAudioContext() {
         if (audioCtx) return;
         try {
@@ -81,63 +83,64 @@
         }
     }
 
+    // РАЗБЛОКИРОВКА: вызывается синхронно при первом касании
+    // Проигрываем беззвучный буфер, чтобы «разбудить» контекст навсегда
     function unlockAudio() {
-        if (!audioEl || audioUnlocked) return;
+        if (audioUnlocked || !audioEl) return;
+
         if (!audioCtx) initAudioContext();
 
         if (audioCtx && audioCtx.state === 'suspended') {
+            // resume() вызываем БЕЗ await — это важно для iOS
             audioCtx.resume().catch(() => {});
         }
 
-        try {
-            audioEl.volume = 0;
-            const playPromise = audioEl.play();
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    audioEl.pause();
-                    audioEl.currentTime = 0;
-                    audioEl.volume = computeVolume();
-                    audioUnlocked = true;
-                }).catch(() => {
-                    audioEl.volume = computeVolume();
-                });
-            } else {
-                audioEl.pause();
-                audioEl.currentTime = 0;
-                audioEl.volume = computeVolume();
-                audioUnlocked = true;
-            }
-        } catch (e) {
-            audioEl.volume = computeVolume();
+        // Проигрываем короткий беззвучный буфер для полной разблокировки
+        if (audioCtx) {
+            try {
+                const buffer = audioCtx.createBuffer(1, 1, 22050);
+                const src = audioCtx.createBufferSource();
+                src.buffer = buffer;
+                src.connect(audioCtx.destination);
+                src.start(0);
+            } catch (e) {}
         }
+
+        audioUnlocked = true;
     }
 
+    // ЗАПУСК ЗВУКА: play() вызывается СИНХРОННО, до любых await
     function startEngineSound() {
         if (!audioEl) return;
 
+        // 1. Будим контекст (без await)
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume().catch(() => {});
         }
 
         try {
+            // 2. Сбрасываем и сразу вызываем play() — это КЛЮЧЕВОЙ ФИКС
             audioEl.pause();
             audioEl.currentTime = 0;
             audioEl.volume = computeVolume();
 
+            // 3. play() СИНХРОННО, без .then() перед ним
             const playPromise = audioEl.play();
 
+            // 4. Обработка ошибки — если браузер всё равно заблокировал
             if (playPromise !== undefined) {
                 playPromise.catch((err) => {
-                    console.warn('Аудио заблокировано при старте:', err);
+                    console.warn('Аудио заблокировано:', err);
+                    // Пробуем ещё раз через 80 мс (запасной вариант)
                     setTimeout(() => {
                         if (!done && holding) {
                             audioEl.play().catch(() => {});
                         }
-                    }, 100);
+                    }, 80);
                 });
             }
         } catch (e) {
-            console.warn('Ошибка запуска аудио:', e);
+            console.warn('Ошибка запуска:', e);
         }
     }
 
@@ -190,6 +193,8 @@
         if (gasBtn) gasBtn.classList.add('active');
         if (rpmWrap) rpmWrap.classList.add('show');
 
+        // СИНХРОННЫЙ ВЫЗОВ: unlockAudio → startEngineSound
+        // Никаких await, никаких .then() между ними
         unlockAudio();
         startEngineSound();
         startTick();
@@ -202,6 +207,7 @@
         stopEngineSound();
     }
 
+    // ВАЖНО: passive: false для touchstart, чтобы preventDefault работал
     if (gasBtn) {
         gasBtn.addEventListener('mousedown', onPressStart);
         gasBtn.addEventListener('touchstart', onPressStart, { passive: false });
@@ -230,6 +236,7 @@
         if (body) body.classList.remove('locked');
         if (scrollHint) scrollHint.classList.add('show');
 
+        // Плавное затухание
         setTimeout(() => {
             if (audioEl) {
                 const fadeOut = setInterval(() => {
