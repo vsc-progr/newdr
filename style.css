@@ -88,10 +88,13 @@ body.locked { overflow: hidden; height: 100vh; }
 
 .preloader-hint {
     margin-top: 30px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--muted);
-    letter-spacing: 0.1em;
+    letter-spacing: 0.05em;
+    line-height: 1.6;
+    max-width: 400px;
+    padding: 0 10px;
 }
 
 /* ============================================================
@@ -219,6 +222,7 @@ body.locked { overflow: hidden; height: 100vh; }
     transition: all 0.2s ease;
     box-shadow: 6px 6px 0 var(--ink);
     position: relative;
+    text-align: center;
 }
 .gas-btn:hover {
     transform: translate(-2px, -2px);
@@ -239,6 +243,16 @@ body.locked { overflow: hidden; height: 100vh; }
     box-shadow: 6px 6px 0 var(--ink);
     cursor: default;
     transform: none;
+}
+
+/* 🔧 НОВОЕ: состояние "подготовки" для Safari */
+.gas-btn.prep {
+    background: var(--red);
+    border-color: var(--ink);
+    color: var(--paper);
+    box-shadow: 6px 6px 0 var(--ink);
+    font-size: 1.1rem;
+    letter-spacing: 0.1em;
 }
 
 .rpm-wrap {
@@ -362,36 +376,6 @@ body.locked { overflow: hidden; height: 100vh; }
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.wheel-smoke {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-}
-.wheel-smoke span {
-    position: absolute;
-    left: 50%;
-    bottom: 5%;
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--ink);
-    opacity: 0;
-    animation: smokePop 3s ease-out infinite;
-}
-.wheel-smoke span:nth-child(1) { animation-delay: 0s; --dx: -60px; --rot: -20deg; }
-.wheel-smoke span:nth-child(2) { animation-delay: 0.5s; --dx: -20px; --rot: -10deg; width: 140px; height: 140px; }
-.wheel-smoke span:nth-child(3) { animation-delay: 1s; --dx: 30px; --rot: 10deg; }
-.wheel-smoke span:nth-child(4) { animation-delay: 1.5s; --dx: 70px; --rot: 20deg; width: 150px; height: 150px; }
-.wheel-smoke span:nth-child(5) { animation-delay: 2s; --dx: 90px; --rot: 30deg; }
-.wheel-smoke span:nth-child(6) { animation-delay: 2.5s; --dx: -80px; --rot: -30deg; }
-@keyframes smokePop {
-    0% { opacity: 0; transform: translate(-50%, 0) scale(0.5); }
-    20% { opacity: 1; }
-    100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -120px) scale(1.8) rotate(var(--rot)); }
 }
 
 .wheel {
@@ -570,6 +554,7 @@ body.locked { overflow: hidden; height: 100vh; }
     .hero-title .title-main { border-bottom-width: 6px; }
     .gas-btn { padding: 16px 32px; font-size: 1.2rem; box-shadow: 4px 4px 0 var(--ink); }
     .gas-btn:active, .gas-btn.active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+    .gas-btn.prep { font-size: 0.95rem; padding: 16px 24px; }
     .sign-hero { gap: 40px; flex-direction: column; margin-bottom: 60px; text-align: center; }
     .wheel-stage { width: 200px; height: 200px; }
     .wheel { width: 150px; height: 150px; }
@@ -585,4 +570,5 @@ body.locked { overflow: hidden; height: 100vh; }
     .hero-logo-red { font-size: 6rem; }
     .hero-title .title-small { letter-spacing: 0.2em; }
     .delivery-msg { padding: 16px; font-size: 0.95rem; }
-}
+    .preloader-hint { font-size: 0.75rem; }
+   }
