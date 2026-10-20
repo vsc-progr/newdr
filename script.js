@@ -47,18 +47,21 @@
     const RISE_PER_TICK = 1.6;
     const FALL_PER_TICK = 2.4;
 
+    // 🔧 Новое: счётчик нажатий для Safari
+    let tapCount = 0;
+    const TAP_REQUIRED = 3;
+
     let rpm = 0, holding = false, done = false, tickTimer = null;
     if (body) body.classList.add('locked');
 
     /* ========================================================
-       🔊 АУДИО — ИСПРАВЛЕНО ДЛЯ МОБИЛЬНЫХ
+       🔊 АУДИО
        ======================================================== */
     let audioCtx = null;
     let sourceNode = null;
     let gainNode = null;
     let audioUnlocked = false;
 
-    // Расчёт громкости: 60% → 100%
     function computeVolume() {
         const minV = 0.6;
         const maxV = 1.0;
@@ -66,7 +69,6 @@
         return minV + (maxV - minV) * t;
     }
 
-    // Инициализация Web Audio API (без await!)
     function initAudioContext() {
         if (audioCtx) return;
         try {
@@ -83,55 +85,52 @@
         }
     }
 
-    // РАЗБЛОКИРОВКА: вызывается синхронно при первом касании
-    // Проигрываем беззвучный буфер, чтобы «разбудить» контекст навсегда
+    // Разблокировка — вызывается на каждом нажатии
     function unlockAudio() {
         if (audioUnlocked || !audioEl) return;
-
         if (!audioCtx) initAudioContext();
 
-        if (audioCtx && audioCtx.state === 'suspended') {
-            // resume() вызываем БЕЗ await — это важно для iOS
-            audioCtx.resume().catch(() => {});
-        }
-
-        // Проигрываем короткий беззвучный буфер для полной разблокировки
-        if (audioCtx) {
-            try {
-                const buffer = audioCtx.createBuffer(1, 1, 22050);
-                const src = audioCtx.createBufferSource();
-                src.buffer = buffer;
-                src.connect(audioCtx.destination);
-                src.start(0);
-            } catch (e) {}
-        }
-
-        audioUnlocked = true;
-    }
-
-    // ЗАПУСК ЗВУКА: play() вызывается СИНХРОННО, до любых await
-    function startEngineSound() {
-        if (!audioEl) return;
-
-        // 1. Будим контекст (без await)
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume().catch(() => {});
         }
 
         try {
-            // 2. Сбрасываем и сразу вызываем play() — это КЛЮЧЕВОЙ ФИКС
+            audioEl.volume = 0;
+            const p = audioEl.play();
+            if (p && p.then) {
+                p.then(() => {
+                    audioEl.pause();
+                    audioEl.currentTime = 0;
+                    audioEl.volume = computeVolume();
+                    audioUnlocked = true;
+                }).catch(() => {
+                    audioEl.volume = computeVolume();
+                });
+            } else {
+                audioEl.pause();
+                audioEl.currentTime = 0;
+                audioEl.volume = computeVolume();
+                audioUnlocked = true;
+            }
+        } catch (e) {
+            audioEl.volume = computeVolume();
+        }
+    }
+
+    function startEngineSound() {
+        if (!audioEl) return;
+
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+
+        try {
             audioEl.pause();
             audioEl.currentTime = 0;
             audioEl.volume = computeVolume();
-
-            // 3. play() СИНХРОННО, без .then() перед ним
-            const playPromise = audioEl.play();
-
-            // 4. Обработка ошибки — если браузер всё равно заблокировал
-            if (playPromise !== undefined) {
-                playPromise.catch((err) => {
-                    console.warn('Аудио заблокировано:', err);
-                    // Пробуем ещё раз через 80 мс (запасной вариант)
+            const p = audioEl.play();
+            if (p && p.catch) {
+                p.catch(() => {
                     setTimeout(() => {
                         if (!done && holding) {
                             audioEl.play().catch(() => {});
@@ -186,15 +185,37 @@
 
     function startTick() { if (!tickTimer) stepRpm(); }
 
+    /* ========================================================
+       🔧 ОБРАБОТКА НАЖАТИЙ С УЧЁТОМ SAFARI
+       ======================================================== */
     function onPressStart(e) {
         if (done) return;
         e.preventDefault();
+
+        // Первые (TAP_REQUIRED - 1) нажатий — только "разогрев" Safari
+        if (tapCount < TAP_REQUIRED - 1) {
+            tapCount++;
+            unlockAudio();
+            startEngineSound(); // пытаемся, но не ждём
+            stopEngineSound();
+
+            // Меняем текст кнопки
+            if (gasBtn) {
+                gasBtn.classList.add('prep');
+                gasBtn.textContent = `ПОДГОТОВКА ${tapCount} / ${TAP_REQUIRED}`;
+            }
+            return;
+        }
+
+        // Это уже третье нажатие — запускаем всё по-настоящему
+        tapCount++;
         holding = true;
-        if (gasBtn) gasBtn.classList.add('active');
+        if (gasBtn) {
+            gasBtn.classList.remove('prep');
+            gasBtn.classList.add('active');
+        }
         if (rpmWrap) rpmWrap.classList.add('show');
 
-        // СИНХРОННЫЙ ВЫЗОВ: unlockAudio → startEngineSound
-        // Никаких await, никаких .then() между ними
         unlockAudio();
         startEngineSound();
         startTick();
@@ -202,12 +223,12 @@
 
     function onPressEnd() {
         if (done) return;
+        if (!holding) return; // если это был "подготовительный" тап — ничего не делаем
         holding = false;
         if (gasBtn) gasBtn.classList.remove('active');
         stopEngineSound();
     }
 
-    // ВАЖНО: passive: false для touchstart, чтобы preventDefault работал
     if (gasBtn) {
         gasBtn.addEventListener('mousedown', onPressStart);
         gasBtn.addEventListener('touchstart', onPressStart, { passive: false });
@@ -236,7 +257,6 @@
         if (body) body.classList.remove('locked');
         if (scrollHint) scrollHint.classList.add('show');
 
-        // Плавное затухание
         setTimeout(() => {
             if (audioEl) {
                 const fadeOut = setInterval(() => {
