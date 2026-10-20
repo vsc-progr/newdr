@@ -47,9 +47,9 @@
     const RISE_PER_TICK = 1.6;
     const FALL_PER_TICK = 2.4;
 
-    // 🔧 Новое: счётчик нажатий для Safari
+    // 🔧 Счётчик нажатий: нужно ровно 3
     let tapCount = 0;
-    const TAP_REQUIRED = 3;
+    const TAPS_REQUIRED = 3;
 
     let rpm = 0, holding = false, done = false, tickTimer = null;
     if (body) body.classList.add('locked');
@@ -85,7 +85,6 @@
         }
     }
 
-    // Разблокировка — вызывается на каждом нажатии
     function unlockAudio() {
         if (audioUnlocked || !audioEl) return;
         if (!audioCtx) initAudioContext();
@@ -186,59 +185,76 @@
     function startTick() { if (!tickTimer) stepRpm(); }
 
     /* ========================================================
-       🔧 ОБРАБОТКА НАЖАТИЙ С УЧЁТОМ SAFARI
+       🔧 ОБРАБОТКА НАЖАТИЙ
+       Логика: нужно 3 отдельных тапа, чтобы "разблокировать" кнопку.
+       После этого зажатие запускает RPM и звук.
        ======================================================== */
-    function onPressStart(e) {
+    function updateButtonText() {
+        if (!gasBtn) return;
+        const left = TAPS_REQUIRED - tapCount;
+        gasBtn.textContent = `НАЖМИ ${left} РАЗ` + (left === 1 ? '' : (left > 1 ? 'А' : ''));
+        // Проще: показываем "НАЖМИ 3 РАЗА", "НАЖМИ 2 РАЗА", "НАЖМИ 1 РАЗ"
+    }
+
+    function handleTap(e) {
         if (done) return;
         e.preventDefault();
 
-        // Первые (TAP_REQUIRED - 1) нажатий — только "разогрев" Safari
-        if (tapCount < TAP_REQUIRED - 1) {
-            tapCount++;
-            unlockAudio();
-            startEngineSound(); // пытаемся, но не ждём
-            stopEngineSound();
-
-            // Меняем текст кнопки
-            if (gasBtn) {
-                gasBtn.classList.add('prep');
-                gasBtn.textContent = `ПОДГОТОВКА ${tapCount} / ${TAP_REQUIRED}`;
+        // Если кнопка уже разблокирована — запускаем обычную механику
+        if (tapCount >= TAPS_REQUIRED) {
+            if (!holding) {
+                holding = true;
+                if (gasBtn) gasBtn.classList.add('active');
+                if (rpmWrap) rpmWrap.classList.add('show');
+                unlockAudio();
+                startEngineSound();
+                startTick();
             }
             return;
         }
 
-        // Это уже третье нажатие — запускаем всё по-настоящему
+        // Считаем тап
         tapCount++;
-        holding = true;
-        if (gasBtn) {
-            gasBtn.classList.remove('prep');
-            gasBtn.classList.add('active');
-        }
-        if (rpmWrap) rpmWrap.classList.add('show');
 
+        // Пытаемся разбудить аудио на каждом тапе
         unlockAudio();
         startEngineSound();
-        startTick();
+        stopEngineSound();
+
+        // Визуальный фидбек
+        if (gasBtn) {
+            gasBtn.classList.add('prep');
+        }
+
+        if (tapCount >= TAPS_REQUIRED) {
+            // Разблокировано — меняем текст
+            if (gasBtn) {
+                gasBtn.classList.remove('prep');
+                gasBtn.textContent = 'ТЕПЕРЬ ЗАЖМИ!';
+            }
+        } else {
+            updateButtonText();
+        }
     }
 
-    function onPressEnd() {
+    function handleRelease() {
         if (done) return;
-        if (!holding) return; // если это был "подготовительный" тап — ничего не делаем
+        if (tapCount < TAPS_REQUIRED) return; // ещё не разблокировано
         holding = false;
         if (gasBtn) gasBtn.classList.remove('active');
         stopEngineSound();
     }
 
+    // Начальный текст
     if (gasBtn) {
-        gasBtn.addEventListener('mousedown', onPressStart);
-        gasBtn.addEventListener('touchstart', onPressStart, { passive: false });
+        gasBtn.textContent = `НАЖМИ ${TAPS_REQUIRED} РАЗА`;
+        gasBtn.addEventListener('mousedown', handleTap);
+        gasBtn.addEventListener('touchstart', handleTap, { passive: false });
+        gasBtn.addEventListener('mouseleave', handleRelease);
+        gasBtn.addEventListener('touchcancel', handleRelease);
     }
-    window.addEventListener('mouseup', onPressEnd);
-    window.addEventListener('touchend', onPressEnd);
-    if (gasBtn) {
-        gasBtn.addEventListener('mouseleave', onPressEnd);
-        gasBtn.addEventListener('touchcancel', onPressEnd);
-    }
+    window.addEventListener('mouseup', handleRelease);
+    window.addEventListener('touchend', handleRelease);
 
     function markDone() {
         done = true;
@@ -247,7 +263,7 @@
         renderRpm();
 
         if (gasBtn) {
-            gasBtn.classList.remove('active');
+            gasBtn.classList.remove('active', 'prep');
             gasBtn.classList.add('done');
             gasBtn.textContent = 'ПОЕХАЛИ!';
         }
@@ -320,12 +336,16 @@
         }
         if (e.code === 'Space' && !done && document.activeElement === gasBtn) {
             e.preventDefault();
-            if (!holding) onPressStart(e);
+            if (tapCount < TAPS_REQUIRED) {
+                handleTap(e);
+            } else if (!holding) {
+                handleTap(e);
+            }
         }
     });
 
     window.addEventListener('keyup', (e) => {
-        if (e.code === 'Space' && !done && holding) onPressEnd();
+        if (e.code === 'Space' && !done && holding) handleRelease();
     });
 
     /* ========================================================
